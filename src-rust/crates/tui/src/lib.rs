@@ -158,16 +158,24 @@ pub use device_auth_dialog::{DeviceAuthDialogState, DeviceAuthStatus, DeviceAuth
 /// input until they run `reset`.
 pub fn setup_terminal() -> io::Result<Terminal<CrosstermBackend<Stdout>>> {
     // Chain on top of any existing hook (e.g. from a previous call or test harness).
+    // Only restore the terminal when the panic originates on the main thread.
+    // Tokio worker threads also trigger this process-wide hook (Tokio catches
+    // the panic internally but the hook still fires), so without this guard any
+    // panicking background task would destroy the live TUI display while the
+    // main render loop is still running.
+    let main_thread_id = std::thread::current().id();
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        // Best-effort restore — ignore errors, we're already unwinding.
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            LeaveAlternateScreen,
-            DisableMouseCapture,
-            crossterm::cursor::Show,
-        );
+        if std::thread::current().id() == main_thread_id {
+            // Best-effort restore — ignore errors, we're already unwinding.
+            let _ = disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                LeaveAlternateScreen,
+                DisableMouseCapture,
+                crossterm::cursor::Show,
+            );
+        }
         original_hook(panic_info);
     }));
 
