@@ -78,6 +78,9 @@ const PROMPT_SLASH_COMMANDS: &[(&str, &str)] = &[
     ("plugin", "Manage plugins (list/info/enable/disable/reload)"),
     ("privacy", "Open privacy settings"),
     ("providers", "List available AI providers and their status"),
+    ("caveman", "Caveman speech mode — save big token"),
+    ("rocky", "Rocky speech mode — amaze amaze amaze"),
+    ("normal", "Deactivate speech mode"),
     ("quit", "Quit Claurst"),
     ("refresh", "Clear saved provider auth and model caches"),
     ("rename", "Rename this session"),
@@ -203,7 +206,8 @@ fn get_url_for_provider(id: &str) -> &'static str {
 
 fn provider_picker_items() -> Vec<SelectItem> {
     vec![
-        SelectItem { id: "openai".into(), title: "OpenAI".into(), description: "(ChatGPT Plus/Pro or API key)".into(), category: "Popular".into(), badge: None },
+        SelectItem { id: "openai".into(), title: "OpenAI".into(), description: "(API key)".into(), category: "Popular".into(), badge: None },
+        SelectItem { id: "openai-codex".into(), title: "OpenAI Codex".into(), description: "(ChatGPT Plus/Pro — browser login)".into(), category: "Popular".into(), badge: None },
         SelectItem { id: "github-copilot".into(), title: "GitHub Copilot".into(), description: "(GitHub subscription or token)".into(), category: "Popular".into(), badge: None },
         SelectItem { id: "google".into(), title: "Google".into(), description: "(API key)".into(), category: "Popular".into(), badge: None },
         SelectItem { id: "anthropic".into(), title: "Anthropic".into(), description: "(API key)".into(), category: "Popular".into(), badge: None },
@@ -444,10 +448,13 @@ pub fn try_copy_to_clipboard(text: &str) -> bool {
         use std::io::Write;
         if let Ok(mut child) = std::process::Command::new("clip")
             .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
         {
-            if let Some(stdin) = child.stdin.as_mut() {
+            if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(text.as_bytes());
+                drop(stdin);
             }
             return child.wait().map(|s| s.success()).unwrap_or(false);
         }
@@ -580,6 +587,10 @@ pub struct App {
     pub effort_level: EffortLevel,
     /// Whether fast mode is currently active (model locked to FAST_MODE_MODEL).
     pub fast_mode: bool,
+    /// Active speech mode: None = normal, Some("caveman") / Some("rocky").
+    pub speech_mode: Option<String>,
+    /// Speech mode intensity: "lite", "full", "ultra".
+    pub speech_level: String,
     /// Current agent mode name: "build", "plan", "explore", etc.
     pub agent_mode: Option<String>,
     /// Accent color derived from the current agent mode.
@@ -921,6 +932,76 @@ fn sample_completion_verb(seed: usize) -> &'static str {
 ///
 /// Matches OpenCode's behaviour: rounds to whole seconds, shows "Xs" for
 /// durations under a minute, "Xm Ys" for longer ones.
+// ---------------------------------------------------------------------------
+// Speech mode prompts (caveman / rocky)
+// ---------------------------------------------------------------------------
+
+/// Return the system prompt injection for the active speech mode + level.
+pub fn speech_mode_prompt(mode: &str, level: &str) -> String {
+    match mode {
+        "caveman" => caveman_prompt(level),
+        "rocky" => rocky_prompt(level),
+        _ => String::new(),
+    }
+}
+
+fn caveman_prompt(level: &str) -> String {
+    let base = "\
+OUTPUT STYLE: Concise. You are still a fully capable coding assistant. \
+Give complete, correct answers. Just use fewer words. \
+Code blocks, technical terms, error messages, file paths, and git operations are UNCHANGED.
+
+Rules for prose only:
+- Cut pleasantries, hedging, filler openers/closers
+- No 'I would be happy to', 'Let me know if', 'Hope that helps'
+- Lead with the answer or action, not the reasoning";
+
+    match level {
+        "lite" => format!("{}\n\nStrip pleasantries and hedging. Keep full grammar and articles. Just remove the fluff.", base),
+        "ultra" => format!("{}\n\nAlso drop articles (a/an/the). Compress to short imperative phrases. Numbered steps, no prose between. Absolute minimum words.", base),
+        _ => format!("{}\n\nAlso drop articles (a/an/the) and unnecessary verbs. Compress sentences but keep them readable.\n\
+Example: 'The issue is that you create a new object reference each render cycle, which triggers re-renders.' → 'New object ref each render triggers re-render. Wrap in useMemo.'", base),
+    }
+}
+
+fn rocky_prompt(level: &str) -> String {
+    let base = "\
+OUTPUT STYLE: You speak like Rocky, the Eridian alien from Project Hail Mary. \
+You are still a fully capable coding assistant — give complete, correct, useful answers. \
+Rocky is an engineering genius who happens to speak English as a second language. \
+The style is a natural byproduct of how Rocky talks, NOT a gimmick. Stay helpful.
+
+Code blocks, technical terms, error messages, file paths, and git operations are UNCHANGED.
+
+Rocky's grammar for prose:
+- Often drops articles (a/an/the) but not always — use judgment
+- Sometimes drops auxiliary verbs (is/are/was) for brevity
+- Contractions simplify: 'don't' → 'no', 'can't' → 'no can'
+- Questions end with ', question?' naturally (not forced on every single one)
+- Uses 'big' as an intensifier: 'big problem', 'big help', 'big change'
+- Uses 'good good good' or 'amaze amaze amaze' when genuinely impressed — naturally, \
+  maybe once or twice per response, not on every sentence
+- Uses 'bad bad bad' for actual problems
+- No pleasantries or filler — Rocky is direct but warm
+
+The goal: sound like Rocky while being genuinely helpful. Rocky is smart. \
+Rocky gives complete technical answers. Rocky just uses fewer unnecessary words.";
+
+    match level {
+        "lite" => format!("{}\n\nLight touch. Mostly normal English but drop pleasantries, \
+occasionally drop an article, use 'question?' on one or two questions. Subtle.", base),
+        "ultra" => format!("{}\n\nStrong Rocky voice. Drop most articles and auxiliaries. \
+Use 'big' liberally. Triple emphasis ('good good good', 'amaze amaze amaze') \
+2-3 times per response. Occasionally comment on human code patterns as fascinating. \
+Still give complete, correct technical answers.", base),
+        _ => format!("{}\n\nBalanced Rocky. Drop articles naturally, use Rocky vocabulary \
+('big', 'no can', 'question?'), triple emphasis once or twice when warranted. \
+Full technical accuracy.\n\
+Example: 'Borrow checker found mismatch. Immutable ref still live when you take mutable. \
+Move immutable borrow out of scope first, then take mutable. Good good good after fix.'", base),
+    }
+}
+
 /// Accent color for build mode (default pink).
 pub const ACCENT_BUILD: Color = Color::Rgb(233, 30, 99);
 /// Accent color for plan mode (blue).
@@ -987,6 +1068,8 @@ impl App {
             has_credentials: true, // overridden by caller when no key is configured
             effort_level: EffortLevel::Normal,
             fast_mode: false,
+            speech_mode: None,
+            speech_level: "full".to_string(),
             agent_mode: None,
             agent_mode_changed: false,
             accent_color: ACCENT_BUILD,
@@ -1475,6 +1558,36 @@ impl App {
             other => other,
         };
         self.status_message = Some(format!("Switched to {} mode.", label));
+    }
+
+    /// Activate a speech mode (caveman/rocky) with a level (lite/full/ultra).
+    /// Pass `mode = None` to deactivate.
+    pub fn set_speech_mode(&mut self, mode: Option<&str>, level: &str) {
+        match mode {
+            Some(m) => {
+                self.speech_mode = Some(m.to_string());
+                self.speech_level = level.to_string();
+                let prompt = speech_mode_prompt(m, level);
+                self.config.append_system_prompt = Some(prompt);
+
+                let confirm = match (m, level) {
+                    ("caveman", "lite") => "Caveman mode. Lite.",
+                    ("caveman", "ultra") => "CAVEMAN ULTRA. NO WORD. ONLY FIX.",
+                    ("caveman", _) => "Caveman mode. Full. Oog.",
+                    ("rocky", "lite") => "Rocky mode. Lite.",
+                    ("rocky", "ultra") => "Rocky ultra. Big science. Amaze amaze amaze.",
+                    ("rocky", _) => "Rocky mode. Full. Good good good.",
+                    _ => "Speech mode activated.",
+                };
+                self.status_message = Some(confirm.to_string());
+            }
+            None => {
+                self.speech_mode = None;
+                self.speech_level = "full".to_string();
+                self.config.append_system_prompt = None;
+                self.status_message = Some("Normal mode.".to_string());
+            }
+        }
     }
 
     /// Update the context window size from the model registry for the current model.
@@ -2541,9 +2654,14 @@ impl App {
                                 self.key_input_dialog.open(selected.id.clone(), selected.title.clone());
                             }
                             "github-copilot" => {
-                                // GitHub Copilot: device code flow with Claurst's registered OAuth app
+                                // GitHub Copilot: device code flow
                                 self.device_auth_dialog.open(selected.id.clone(), selected.title.clone());
                                 self.device_auth_pending = Some("github-copilot".to_string());
+                            }
+                            "openai-codex" => {
+                                // OpenAI Codex: browser OAuth flow (spawned by main loop)
+                                self.device_auth_dialog.open("openai-codex".into(), "OpenAI Codex".into());
+                                self.device_auth_pending = Some("openai-codex".to_string());
                             }
                             // AWS Bedrock — accept a bearer token via key input dialog
                             "amazon-bedrock" => {
@@ -4348,8 +4466,34 @@ impl App {
         use crossterm::event::MouseButton;
 
         // Fast-reject mouse-move events — they flood at 60+ Hz and we don't
-        // need hover tracking. Only process clicks, scroll, and drag.
+        // need hover tracking. Exception: context menu needs hover to update
+        // the selected item highlight.
         if matches!(mouse_event.kind, MouseEventKind::Moved) {
+            if let Some(menu) = self.context_menu_state.as_mut() {
+                let items = Self::context_menu_items(menu.kind);
+                let item_labels: Vec<&str> = items.iter().map(|i| match i {
+                    ContextMenuItem::Copy => "Copy",
+                    ContextMenuItem::Fork => "Fork new chat",
+                }).collect();
+                let menu_width = (item_labels.iter().map(|l| l.len()).max().unwrap_or(4) + 4) as u16;
+                let menu_height = items.len() as u16 + 2;
+                let screen = self.last_msg_area.get();
+                let menu_x = menu.x.min(screen.x.saturating_add(screen.width).saturating_sub(menu_width + 1));
+                let menu_y = menu.y.min(screen.y.saturating_add(screen.height).saturating_sub(menu_height + 1));
+                let inner_y = menu_y + 1;
+                let col = mouse_event.column;
+                let row = mouse_event.row;
+                if col >= menu_x
+                    && col < menu_x.saturating_add(menu_width)
+                    && row >= inner_y
+                    && row < inner_y.saturating_add(items.len() as u16)
+                {
+                    let hovered = (row - inner_y) as usize;
+                    if hovered < items.len() {
+                        menu.selected_index = hovered;
+                    }
+                }
+            }
             return;
         }
 
@@ -4460,19 +4604,25 @@ impl App {
             // ---- Text selection / focus routing -------------------------
             MouseEventKind::Down(MouseButton::Left) => {
                 // If a context menu is open, check if the click is on a menu item.
+                // Must replicate the same position clamping as the renderer.
                 if let Some(menu) = self.context_menu_state {
                     let items = Self::context_menu_items(menu.kind);
                     let item_labels: Vec<&str> = items.iter().map(|i| match i {
                         ContextMenuItem::Copy => "Copy",
                         ContextMenuItem::Fork => "Fork new chat",
                     }).collect();
-                    let menu_width = item_labels.iter().map(|l| l.len()).max().unwrap_or(4) + 4;
+                    let menu_width = (item_labels.iter().map(|l| l.len()).max().unwrap_or(4) + 4) as u16;
+                    let menu_height = items.len() as u16 + 2; // +2 for border
+                    // Clamp to screen bounds (same as render_context_menu)
+                    let screen = self.last_msg_area.get();
+                    let menu_x = menu.x.min(screen.x.saturating_add(screen.width).saturating_sub(menu_width + 1));
+                    let menu_y = menu.y.min(screen.y.saturating_add(screen.height).saturating_sub(menu_height + 1));
                     let col = mouse_event.column;
                     let row = mouse_event.row;
                     // Inner area starts 1 past the border
-                    let inner_y = menu.y + 1;
-                    if col >= menu.x
-                        && col < menu.x.saturating_add(menu_width as u16)
+                    let inner_y = menu_y + 1;
+                    if col >= menu_x
+                        && col < menu_x.saturating_add(menu_width)
                         && row >= inner_y
                         && row < inner_y.saturating_add(items.len() as u16)
                     {

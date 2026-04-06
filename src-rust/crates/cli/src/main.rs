@@ -1844,6 +1844,11 @@ async fn run_interactive(
                                         }
                                     }
                                 }
+                                Some(CommandResult::SpeechMode { mode, level }) => {
+                                    app.set_speech_mode(mode.as_deref(), &level);
+                                    cmd_ctx.config = app.config.clone();
+                                    tool_ctx.config = app.config.clone();
+                                }
                                 Some(CommandResult::Message(msg)) => {
                                     // Suppress text output when TUI already opened an
                                     // overlay for this command (e.g. /stats opens dialog
@@ -2605,6 +2610,29 @@ async fn run_interactive(
                             "Anthropic OAuth requires a registered application.\n\
                              Use an API key instead: console.anthropic.com/settings/keys".to_string()
                         )).await;
+                    });
+                }
+                "openai-codex" => {
+                    let tx2 = device_auth_tx.clone();
+                    app.device_auth_dialog.set_code(
+                        "".to_string(),
+                        "Opening browser for OpenAI login...".to_string(),
+                        "".to_string(),
+                        0,
+                    );
+                    tokio::spawn(async move {
+                        match crate::codex_oauth_flow::run_oauth_flow().await {
+                            Ok(tokens) => {
+                                let _ = tx2.send(DeviceAuthEvent::TokenReceived(
+                                    tokens.access_token,
+                                )).await;
+                            }
+                            Err(e) => {
+                                let _ = tx2.send(DeviceAuthEvent::Error(
+                                    format!("Codex OAuth failed: {}", e),
+                                )).await;
+                            }
+                        }
                     });
                 }
                 _ => {
