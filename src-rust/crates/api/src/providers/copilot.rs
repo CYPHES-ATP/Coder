@@ -502,6 +502,23 @@ impl CopilotProvider {
                         }
                     }
                 }
+                Some("reasoning") => {
+                    // Extract reasoning summary text from the Responses API.
+                    // Format: { "type": "reasoning", "summary": [{ "type": "summary_text", "text": "..." }] }
+                    if let Some(summaries) = item.get("summary").and_then(|v| v.as_array()) {
+                        let reasoning: String = summaries
+                            .iter()
+                            .filter_map(|s| s.get("text").and_then(|t| t.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("");
+                        if !reasoning.is_empty() {
+                            content.push(ContentBlock::Thinking {
+                                thinking: reasoning,
+                                signature: String::new(),
+                            });
+                        }
+                    }
+                }
                 Some("function_call") => {
                     has_tool_call = true;
                     let id = item
@@ -993,6 +1010,19 @@ impl LlmProvider for CopilotProvider {
                         Some(d) => d,
                         None => continue,
                     };
+
+                    // Extract reasoning traces (Copilot uses "reasoning_text").
+                    for field in &["reasoning_text", "reasoning_content", "reasoning"] {
+                        if let Some(reasoning) = delta.get(*field).and_then(|v| v.as_str()) {
+                            if !reasoning.is_empty() {
+                                yield Ok(StreamEvent::ReasoningDelta {
+                                    index: 0,
+                                    reasoning: reasoning.to_string(),
+                                });
+                                break;
+                            }
+                        }
+                    }
 
                     if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
                         if !content.is_empty() {

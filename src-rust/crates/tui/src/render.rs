@@ -1070,6 +1070,22 @@ fn append_turn_items(
         ));
     }
 
+    // Show a "Thinking" shimmer when the turn is active but no text or
+    // thinking content has arrived yet — gives visual feedback that the
+    // model is working (especially for providers without thinking support).
+    if turn.active
+        && turn.live_text.is_none()
+        && turn.live_thinking.is_none()
+        && turn.tool_blocks.iter().all(|b| b.status != ToolStatus::Running)
+    {
+        let mut spans = vec![Span::raw("  ")];
+        spans.extend(shimmer_spans("Thinking", frame_count));
+        sections.push((
+            vec![Line::from(spans)],
+            Some(turn.primary_message_index()),
+        ));
+    }
+
     if let Some(text) = turn.live_text {
         let lines = render_transcript_live_text(text, width);
         if !lines.is_empty() {
@@ -1100,7 +1116,9 @@ fn append_turn_items(
 }
 
 fn render_message_items(app: &App, width: u16) -> Vec<RenderedLineItem> {
-    let streaming = !app.streaming_text.is_empty() || !app.streaming_thinking.is_empty();
+    let streaming = app.is_streaming
+        || !app.streaming_text.is_empty()
+        || !app.streaming_thinking.is_empty();
     let has_running_tool_blocks = app
         .tool_use_blocks
         .iter()
@@ -1715,14 +1733,18 @@ fn render_status_row(frame: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         )]
     } else if app.is_streaming {
-        let Some(raw_label) = app.status_message.as_deref().filter(|status| {
-            let trimmed = status.trim();
-            !trimmed.is_empty()
-                && !trimmed.eq_ignore_ascii_case("thinking")
-                && !trimmed.eq_ignore_ascii_case("thinking…")
-        }) else {
-            return;
-        };
+        // Pick a label: use the status message if it has real content,
+        // otherwise show a default "Thinking" shimmer so the user always
+        // sees that the model is working.
+        let raw_label = app.status_message.as_deref()
+            .filter(|s| {
+                let t = s.trim();
+                !t.is_empty()
+                    && !t.eq_ignore_ascii_case("thinking")
+                    && !t.eq_ignore_ascii_case("thinking…")
+            })
+            .or_else(|| app.spinner_verb.as_deref())
+            .unwrap_or("Thinking");
 
         let mut s = vec![Span::styled(
             spinner_char(app.frame_count).to_string(),

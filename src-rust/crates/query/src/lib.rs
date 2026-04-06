@@ -681,6 +681,8 @@ pub async fn run_query_loop(
         config.model.clone()
     };
     let mut used_fallback = false;
+    // How many automatic retries remain when a stream stalls (no data for 45s).
+    let mut retries_left: u32 = 2;
 
     // If an agent defines a max_turns override, respect it (agent wins over config).
     let effective_max_turns = config.agent_definition
@@ -1075,12 +1077,22 @@ pub async fn run_query_loop(
                     let mut msg_id = uuid::Uuid::new_v4().to_string();
 
                     use futures::StreamExt as ProviderStreamExt;
+                    let provider_stall_timeout = std::time::Duration::from_secs(45);
+                    let provider_stall = tokio::time::sleep(provider_stall_timeout);
+                    tokio::pin!(provider_stall);
+                    let mut provider_stream_stalled = false;
+
                     loop {
                         tokio::select! {
                             _ = cancel_token.cancelled() => {
                                 return QueryOutcome::Cancelled;
                             }
+                            _ = &mut provider_stall => {
+                                provider_stream_stalled = true;
+                                break;
+                            }
                             event = stream.next() => {
+                                provider_stall.as_mut().reset(tokio::time::Instant::now() + provider_stall_timeout);
                                 match event {
                                     None => break,
                                     Some(Err(e)) => {
@@ -1135,6 +1147,20 @@ pub async fn run_query_loop(
                         }
                     }
 
+                    // If the stream stalled (no data for 45s), retry.
+                    if provider_stream_stalled && retries_left > 0 {
+                        retries_left -= 1;
+                        warn!(provider = %provider_id_str, model = %model_id_str, retries_left, "Provider stream stalled — retrying");
+                        if let Some(ref tx) = event_tx {
+                            let _ = tx.send(QueryEvent::Status(format!(
+                                "No response for 45s — retrying ({} left)…",
+                                retries_left + 1
+                            )));
+                        }
+                        turn -= 1;
+                        continue;
+                    }
+
                     // Build the content blocks from accumulated stream data.
                     let mut content_blocks: Vec<ContentBlock> = Vec::new();
 
@@ -1187,7 +1213,23 @@ pub async fn run_query_loop(
                     if !tool_use_blocks.is_empty() {
                         let mut tool_results = Vec::new();
                         for (tool_id, tool_name, tool_input) in tool_use_blocks {
+                            // Notify TUI that a tool is starting (matches Anthropic path).
+                            if let Some(ref tx) = event_tx {
+                                let _ = tx.send(QueryEvent::ToolStart {
+                                    tool_name: tool_name.clone(),
+                                    tool_id: tool_id.clone(),
+                                    input_json: tool_input.to_string(),
+                                });
+                            }
                             let result = execute_tool(&*tool_name, &tool_input, tools, &tool_ctx).await;
+                            if let Some(ref tx) = event_tx {
+                                let _ = tx.send(QueryEvent::ToolEnd {
+                                    tool_name: tool_name.clone(),
+                                    tool_id: tool_id.clone(),
+                                    result: result.content.clone(),
+                                    is_error: result.is_error,
+                                });
+                            }
                             tool_results.push(ContentBlock::ToolResult {
                                 tool_use_id: tool_id,
                                 content: claurst_core::types::ToolResultContent::Text(result.content),
@@ -1282,15 +1324,26 @@ pub async fn run_query_loop(
             }
         };
 
-        // Accumulate the streamed response
+        // Accumulate the streamed response.
+        // A stall timeout auto-retries the request if no data arrives for 45s
+        // (some providers are slow; we don't want to give up too early).
+        const STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
         let mut accumulator = StreamAccumulator::new();
+        let stall_deadline = tokio::time::sleep(STALL_TIMEOUT);
+        tokio::pin!(stall_deadline);
 
-        loop {
+        let stream_stalled = loop {
             tokio::select! {
                 _ = cancel_token.cancelled() => {
                     return QueryOutcome::Cancelled;
                 }
+                _ = &mut stall_deadline => {
+                    // No data for 45s — stall detected
+                    break true;
+                }
                 event = stream_rx.recv() => {
+                    // Reset stall timer on every received event.
+                    stall_deadline.as_mut().reset(tokio::time::Instant::now() + STALL_TIMEOUT);
                     match event {
                         Some(evt) => {
                             accumulator.on_event(&evt);
@@ -1301,14 +1354,27 @@ pub async fn run_query_loop(
                                     }
                                     error!(error_type, message, "Stream error");
                                 }
-                                AnthropicStreamEvent::MessageStop => break,
+                                AnthropicStreamEvent::MessageStop => break false,
                                 _ => {}
                             }
                         }
-                        None => break, // Stream ended
+                        None => break false, // Stream ended
                     }
                 }
             }
+        };
+
+        if stream_stalled && retries_left > 0 {
+            retries_left -= 1;
+            warn!(model = %effective_model, retries_left, "Stream stalled — retrying request");
+            if let Some(ref tx) = event_tx {
+                let _ = tx.send(QueryEvent::Status(format!(
+                    "No response for 45s — retrying ({} left)…",
+                    retries_left + 1
+                )));
+            }
+            turn -= 1; // don't count this stalled attempt
+            continue;
         }
 
         let (assistant_msg, usage, stop_reason) = accumulator.finish();
