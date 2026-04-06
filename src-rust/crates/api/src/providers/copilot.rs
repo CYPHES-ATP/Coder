@@ -539,21 +539,6 @@ impl CopilotProvider {
                     let input = serde_json::from_str(args).unwrap_or_else(|_| json!({}));
                     content.push(ContentBlock::ToolUse { id, name, input });
                 }
-                Some("reasoning") => {
-                    if let Some(summary) = item.get("summary").and_then(|value| value.as_array()) {
-                        let thinking = summary
-                            .iter()
-                            .filter_map(|part| part.get("text").and_then(|value| value.as_str()))
-                            .collect::<Vec<_>>()
-                            .join("");
-                        if !thinking.is_empty() {
-                            content.push(ContentBlock::Thinking {
-                                thinking,
-                                signature: String::new(),
-                            });
-                        }
-                    }
-                }
                 _ => {}
             }
         }

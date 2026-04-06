@@ -612,6 +612,15 @@ pub struct App {
 
     /// Instant the session started (used for elapsed-time in the status bar).
     pub session_start: std::time::Instant,
+    /// Current Rustle pose for rendering (updated each frame).
+    pub rustle_current_pose: crate::rustle::RustlePose,
+    /// Temporary Rustle pose override (e.g. look-down on Tab). Reverts to
+    /// default after this instant passes.
+    pub rustle_pose_until: Option<std::time::Instant>,
+    /// The temporary pose to show until `rustle_pose_until`.
+    pub rustle_temp_pose: Option<crate::rustle::RustlePose>,
+    /// Frame counter at which the next random eye-shift should fire.
+    pub rustle_next_blink: u64,
     /// Instant the current turn's streaming began (reset each time streaming starts).
     pub turn_start: Option<std::time::Instant>,
     /// Elapsed time string for the last completed turn, e.g. "2m 5s".
@@ -989,6 +998,13 @@ impl App {
             new_messages_while_scrolled: 0,
             token_warning_threshold_shown: 0,
             session_start: std::time::Instant::now(),
+            rustle_current_pose: crate::rustle::RustlePose::Default,
+            rustle_pose_until: None,
+            rustle_temp_pose: None,
+            rustle_next_blink: 200 + (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos() as u64 % 300),
             turn_start: None,
             last_turn_elapsed: None,
             last_turn_verb: None,
@@ -1383,6 +1399,58 @@ impl App {
         self.model_name = model;
         self.refresh_context_window_size();
         self.context_used_tokens = 0;
+    }
+
+    /// Update the Rustle pose for this frame — handles temporary poses, random blinks,
+    /// and the loading spinner on stalls/errors.
+    /// Call once per frame before rendering.
+    pub fn tick_rustle_pose(&mut self) {
+        // Loading spinner: shown when streaming has stalled (no data for 3s+).
+        if self.is_streaming {
+            if let Some(start) = self.stall_start {
+                if start.elapsed() > std::time::Duration::from_secs(3) {
+                    self.rustle_current_pose = crate::rustle::RustlePose::Loading {
+                        frame: self.frame_count,
+                    };
+                    return;
+                }
+            }
+        }
+
+        // Check if a temporary pose is active.
+        if let Some(until) = self.rustle_pose_until {
+            if std::time::Instant::now() < until {
+                self.rustle_current_pose = self.rustle_temp_pose.clone()
+                    .unwrap_or(crate::rustle::RustlePose::Default);
+                return;
+            }
+            // Expired — clear it.
+            self.rustle_pose_until = None;
+            self.rustle_temp_pose = None;
+        }
+
+        // Random eye-shift: every ~200-500 frames, briefly look right.
+        if self.frame_count >= self.rustle_next_blink {
+            self.rustle_temp_pose = Some(crate::rustle::RustlePose::LookRight);
+            self.rustle_pose_until = Some(
+                std::time::Instant::now() + std::time::Duration::from_millis(800)
+            );
+            // Schedule next blink 200-500 frames from now (random-ish).
+            let jitter = (self.frame_count.wrapping_mul(7) % 300) + 200;
+            self.rustle_next_blink = self.frame_count + jitter;
+            self.rustle_current_pose = crate::rustle::RustlePose::LookRight;
+            return;
+        }
+
+        self.rustle_current_pose = crate::rustle::RustlePose::Default;
+    }
+
+    /// Trigger Rustle looking down briefly (called on Tab / mode switch).
+    pub fn rustle_look_down(&mut self) {
+        self.rustle_temp_pose = Some(crate::rustle::RustlePose::LookDown);
+        self.rustle_pose_until = Some(
+            std::time::Instant::now() + std::time::Duration::from_secs(1)
+        );
     }
 
     /// Cycle to the next agent mode: build → plan → explore → build.
@@ -3262,6 +3330,7 @@ impl App {
                 } else if self.prompt_input.is_empty() {
                     // Cycle agent mode: build → plan → explore → build
                     self.cycle_agent_mode();
+                    self.rustle_look_down();
                 }
             }
 
@@ -3956,6 +4025,7 @@ impl App {
                         self.refresh_prompt_input();
                     } else if self.prompt_input.is_empty() {
                         self.cycle_agent_mode();
+                    self.rustle_look_down();
                     }
                 }
                 false
