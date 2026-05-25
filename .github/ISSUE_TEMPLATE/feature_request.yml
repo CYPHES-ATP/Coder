@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a Stacked or CYPHES capability.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user need or project goal does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should change?
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Target phase
+      options:
+        - Phase 1: CYPHES rebrand
+        - Phase 1: runtime stabilization
+        - Phase 1: permissions/receipts
+        - Phase 2: Stacked multi-agent workflow
+        - Later
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Include references, mockups, or implementation details if helpful.

@@ -1,0 +1,38 @@
+name: Provenance or license concern
+description: Raise a source, attribution, license, or clean-room concern.
+title: "[Provenance]: "
+labels:
+  - provenance
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for source lineage, license compatibility, attribution, or leaked-code exclusion concerns.
+  - type: textarea
+    id: concern
+    attributes:
+      label: Concern
+      description: What file, asset, dependency, or behavior needs review?
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      placeholder: path, URL, commit, package, or asset name
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or context
+      description: Include links or notes that help maintainers evaluate the concern.
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: Urgency
+      options:
+        - Blocks publication
+        - Blocks release
+        - Needs review before merge
+        - Informational
+    validations:
+      required: true
