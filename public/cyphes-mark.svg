@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="CYPHES mark">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="CYPHES identity mark">
   <rect width="128" height="128" rx="28" fill="#020303"/>
-  <path d="M32 64h20m24 0h20M64 32v20m0 24v20" stroke="#00f6ff" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="64" cy="64" r="18" fill="none" stroke="#f5fbfa" stroke-width="5"/>
-  <circle cx="64" cy="64" r="5" fill="#c7ff47"/>
-  <path d="M40 40l12 12M88 40 76 52M40 88l12-12M88 88 76 76" stroke="#63fff5" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="64" cy="43" r="22" fill="#f5fbfa"/>
+  <path d="M24 111c6-28 25-44 40-44s34 16 40 44" fill="#f5fbfa"/>
+  <path d="M35 101c8-17 19-26 29-26s21 9 29 26" fill="none" stroke="#00f6ff" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="64" cy="43" r="5" fill="#c7ff47"/>
+  <path d="M31 24h16M81 24h16M31 104h16M81 104h16" stroke="#63fff5" stroke-width="5" stroke-linecap="round"/>
 </svg>
