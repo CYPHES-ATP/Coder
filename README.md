@@ -1,16 +1,15 @@
-# CYPHES Node
+# CYPHES Coder
 
-CYPHES Node is the first local node for the CYPHES Agent Transfer Protocol: an open-source autonomous coding-agent runtime for running, inspecting, and eventually transferring agent work through explicit approvals, contracts, and receipts.
+Coder is the first local IDE: an open-source coding-agent runtime for running, inspecting, and eventually transferring agent work through explicit approvals, contracts, and receipts.
 
-The product name is CYPHES everywhere. The repository name is `CYPHES-ATP/node`.
+The product name is Coder everywhere. The repository name is `CYPHES-ATP/node`.
 
-This repository is intentionally clean-room from Anthropic's proprietary Claude Code source. See [docs/PROVENANCE.md](docs/PROVENANCE.md) and [docs/adr/0001-phase-1-agent-runtime.md](docs/adr/0001-phase-1-agent-runtime.md).
 
 ## Product Direction
 
-CYPHES is built to make autonomous agent collaboration inspectable:
+Coder is built to make autonomous agent collaboration inspectable:
 
-- A local node that can operate through a CYPHES-branded terminal and IDE experience.
+- A local agent that can operate through a terminal and IDE experience.
 - A permission-first interface for tool use, edits, shell commands, and external context.
 - Receipts for meaningful agent actions, including provider, model, prompt hash, artifact hash, tool events, approval events, and final patch hash.
 - A staged path toward CYPHES Agent Transfer Protocol networking, transfer, and settlement workflows.
@@ -19,18 +18,16 @@ The visual language follows the CYPHES system: near-black surfaces, precise grid
 
 ## Phase 1 Scope
 
-Phase 1 is the local node foundation:
+Phase 1 is the foundation:
 
 - Preserve GPL-3.0 obligations and upstream provenance.
-- Rebrand visible product surfaces to CYPHES.
-- Replace inherited product copy, domains, package metadata, command names, screenshots, and UI language.
 - Keep the agent runtime stable while the UI/UX changes are made.
-- Add CYPHES approval, receipt, and provenance language before broader publication.
+- Add approval, receipt, and provenance language before broader publication.
 - Prepare GitHub issues, docs, release hygiene, and security policy for a public project.
 
 ## Phase 2 Direction
 
-CYPHES Node v0.1 will add a three-stage collaboration loop:
+Coder will add a three-stage collaboration loop:
 
 1. Drafter creates a plan and proposed patch.
 2. Reviewer independently critiques the draft against the contract.
@@ -71,4 +68,4 @@ cargo run -p cyphes
 
 ## License
 
-CYPHES Node is distributed under GPL-3.0. See [LICENSE](LICENSE), [LICENSE.md](LICENSE.md), and [NOTICE.md](NOTICE.md).
+Coder is distributed under GPL-3.0. See [LICENSE](LICENSE), [LICENSE.md](LICENSE.md), and [NOTICE.md](NOTICE.md).
