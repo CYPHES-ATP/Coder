@@ -1,4 +1,4 @@
-# CYPHES Coder
+# Coder
 
 Coder is the first local IDE: an open-source coding-agent runtime for running, inspecting, and eventually transferring agent work through explicit approvals, contracts, and receipts.
 
